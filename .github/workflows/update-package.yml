@@ -1,0 +1,107 @@
+name: Update Package.swift
+
+on:
+  repository_dispatch:
+    types: [update-package]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Koog version tag (e.g. 0.7.0)'
+        required: true
+      url:
+        description: 'URL of the XCFramework zip'
+        required: true
+      checksum:
+        description: 'SHA-256 checksum of the XCFramework zip'
+        required: true
+
+jobs:
+  update-package:
+    name: Update Package.swift
+    runs-on: ubuntu-latest
+    environment: spm-release
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve inputs
+        run: |
+          if [[ '${{ github.event_name }}' == 'repository_dispatch' ]]; then
+            version='${{ github.event.client_payload.version }}'
+            url='${{ github.event.client_payload.url }}'
+            checksum='${{ github.event.client_payload.checksum }}'
+          else
+            version='${{ inputs.version }}'
+            url='${{ inputs.url }}'
+            checksum='${{ inputs.checksum }}'
+          fi
+          if [[ -z "$version" || -z "$url" || -z "$checksum" ]]; then
+            echo "Missing required inputs. Provide version, url, checksum." >&2
+            exit 1
+          fi
+          {
+            echo "VERSION=$version"
+            echo "URL=$url"
+            echo "CHECKSUM=$checksum"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate inputs
+        run: |
+          version="$VERSION"
+          url="$URL"
+          semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$version" =~ $semver_regex ]]; then
+            echo "Invalid version '$version'. Must be SemVer 2.0.0 without a leading 'v'." >&2
+            exit 1
+          fi
+          if [[ "$url" != https://github.com/JetBrains/koog/releases/download/* ]]; then
+            echo "Invalid URL '$url'. Must start with https://github.com/JetBrains/koog/releases/download/." >&2
+            exit 1
+          fi
+
+      - name: Fail if tag exists
+        run: |
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/$VERSION"; then
+            echo "Tag '$VERSION' already exists." >&2
+            exit 1
+          fi
+
+      - name: Generate Package.swift
+        run: |
+          cat > Package.swift << 'EOF'
+          // swift-tools-version:5.9
+          import PackageDescription
+
+          let package = Package(
+              name: "Koog",
+              platforms: [
+                  .iOS(.v13),
+              ],
+              products: [
+                  .library(
+                      name: "Koog",
+                      targets: ["Koog"]
+                  ),
+              ],
+              targets: [
+                  .binaryTarget(
+                      name: "Koog",
+                      url: "${{ env.URL }}",
+                      checksum: "${{ env.CHECKSUM }}"
+                  ),
+              ]
+          )
+          EOF
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "release: update Package.swift for $VERSION"
+          git tag "$VERSION"
+          git push origin HEAD
+          git push origin "$VERSION"
