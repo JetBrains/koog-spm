@@ -18,24 +18,36 @@ on:
 jobs:
   update-package:
     name: Update Package.swift
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'repository_dispatch' &&
+       github.event.sender.login == 'koog-spm-release[bot]')
     runs-on: ubuntu-latest
-    environment: spm-release
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Resolve inputs
+        env:
+          PAYLOAD_VERSION: ${{ github.event.client_payload.version }}
+          PAYLOAD_URL: ${{ github.event.client_payload.url }}
+          PAYLOAD_CHECKSUM: ${{ github.event.client_payload.checksum }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_URL: ${{ inputs.url }}
+          INPUT_CHECKSUM: ${{ inputs.checksum }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ '${{ github.event_name }}' == 'repository_dispatch' ]]; then
-            version='${{ github.event.client_payload.version }}'
-            url='${{ github.event.client_payload.url }}'
-            checksum='${{ github.event.client_payload.checksum }}'
+          if [[ "$EVENT_NAME" == 'repository_dispatch' ]]; then
+            version="$PAYLOAD_VERSION"
+            url="$PAYLOAD_URL"
+            checksum="$PAYLOAD_CHECKSUM"
           else
-            version='${{ inputs.version }}'
-            url='${{ inputs.url }}'
-            checksum='${{ inputs.checksum }}'
+            version="$INPUT_VERSION"
+            url="$INPUT_URL"
+            checksum="$INPUT_CHECKSUM"
           fi
           if [[ -z "$version" || -z "$url" || -z "$checksum" ]]; then
             echo "Missing required inputs. Provide version, url, checksum." >&2
@@ -69,6 +81,13 @@ jobs:
             exit 1
           fi
 
+      - name: Fail if branch exists
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/release/$VERSION" > /dev/null 2>&1; then
+            echo "Branch 'release/$VERSION' already exists." >&2
+            exit 1
+          fi
+
       - name: Generate Package.swift
         run: |
           cat > Package.swift << 'EOF'
@@ -96,12 +115,20 @@ jobs:
           )
           EOF
 
-      - name: Commit and tag
+      - name: Create branch and open PR
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "release/$VERSION"
           git add Package.swift
           git commit -m "release: update Package.swift for $VERSION"
-          git tag "$VERSION"
-          git push origin HEAD
-          git push origin "$VERSION"
+          git push origin "release/$VERSION"
+          gh pr create \
+            --title "release: update Package.swift for $VERSION" \
+            --body "Automated update of \`Package.swift\` for Koog **$VERSION**.
+
+See upstream release: https://github.com/JetBrains/koog/releases/tag/$VERSION" \
+            --base main \
+            --head "release/$VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
