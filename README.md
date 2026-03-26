@@ -29,7 +29,7 @@ Add the dependency to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/JetBrains/koog-spm", from: "0.7.2"),
+    .package(url: "https://github.com/JetBrains/koog-spm", from: "0.7.3"),
 ],
 targets: [
     .target(
