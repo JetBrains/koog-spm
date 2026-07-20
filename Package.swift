@@ -15,8 +15,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "Koog",
-            url: "https://github.com/JetBrains/koog/releases/download/1.0.0/Koog-1.0.0.xcframework.zip",
-            checksum: "862d4752413b6b6757a148f0582cedf72157c846d8c1429c044ced5552749dbd"
+            url: "https://github.com/JetBrains/koog/releases/download/1.1.1/Koog-1.1.1.xcframework.zip",
+            checksum: "357ed3d30b83d24be91c68246e5e2bd41544334e749af79974bb63c6f7172ca2"
         ),
     ]
 )
